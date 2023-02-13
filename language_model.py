@@ -25,7 +25,7 @@ def loss_estimation(model, train_data, test_data):
 
         for k in range(eval_iters):
             X, Y = get_batch(train_data if learn_env == 'train' else test_data)
-            logits, loss = model(X, Y)
+            _, loss = model(X, Y)
             losses[k] = loss.item()
             output[learn_env] = losses.mean()
     model.train()
@@ -43,19 +43,19 @@ class Head(nn.Module):
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        B, T, C = x.shape
-        k = self.key(x)
-        q = self.query(x)
+    def forward(self, _x):
+        _, TIME, CHANNEL = _x.shape
+        key = self.key(_x)
+        query = self.query(_x)
 
         # calculate affinities
-        wei = q @ k.transpose(-2, -1) * C**-0.5  # (B,T,C) @ (B,C,T) => (B,T,T)
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))  # B,T,T
-        wei = F.softmax(wei, dim=1)  # B,T,T
+        wei = query @ key.transpose(-2, -1) * CHANNEL**-0.5  # (B,T,C) @ (B,C,T) => (B,T,T)
+        wei = wei.masked_fill(self.tril[:TIME, :TIME] == 0, float('-inf'))  # type: ignore # B,T,T
+        wei = F.softmax(wei, dim=-1)  # B,T,T
         wei = self.dropout(wei)
 
         # weighted aggregation
-        v = self.value(x)  # B,T,C
+        v = self.value(_x)  # B,T,C
         output = wei @ v  # (B,T,T) @ (B,T,C) => (B,T,C)
 
         return output
@@ -110,7 +110,6 @@ class Block(nn.Module):
         return x
 
 
-
 class BigramLangModel(nn.Module):
 
     def __init__(self, vocab_size: int):
@@ -120,7 +119,6 @@ class BigramLangModel(nn.Module):
         self.blocks = nn.Sequential(*[Block(n_embds, n_head=n_head) for _ in range(n_layers)])
         self.ln_f = nn.LayerNorm(n_embds)
         self.l_head = nn.Linear(n_embds, vocab_size)
-
 
     def forward(self, idx: torch.Tensor, targets: torch.Tensor | None =None):
         B, T = idx.shape
@@ -144,7 +142,6 @@ class BigramLangModel(nn.Module):
 
         return logits, loss
 
-
     def generate(self, idx: list, max_new_tokens: int):
         for _ in range(max_new_tokens):
             idx_crop = idx[:, -block_size:]
@@ -155,9 +152,4 @@ class BigramLangModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)  # B, T+1
 
         return idx
-
-
-
-
-
 
